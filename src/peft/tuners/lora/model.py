@@ -366,6 +366,7 @@ class LoraModel(BaseTuner):
         return peft_config
 
     def _unload_and_optionally_merge(self, merge=True, progressbar: bool = False, safe_merge: bool = False):
+        self.model = self.model.to('cpu') # send model parameters to CPU for merging
         if merge:
             if getattr(self.model, "quantization_method", None) == "gptq":
                 raise ValueError("Cannot merge LORA layers when the model is gptq quantized")
