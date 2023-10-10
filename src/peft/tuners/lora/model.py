@@ -366,14 +366,14 @@ class LoraModel(BaseTuner):
         return peft_config
 
     def _unload_and_optionally_merge(self, merge=True, progressbar: bool = False, safe_merge: bool = False):
-        self.model = self.model.to('cpu') # send model parameters to CPU for merging
+        # self.model = self.model.to('cpu') # send model parameters to CPU for merging
         if merge:
             if getattr(self.model, "quantization_method", None) == "gptq":
                 raise ValueError("Cannot merge LORA layers when the model is gptq quantized")
 
         key_list = [key for key, _ in self.model.named_modules() if "lora" not in key]
         desc = "Unloading " + ("and merging " if merge else "") + "model"
-        for key in tqdm(key_list, disable=not progressbar, desc=desc):
+        for key in key_list:
             try:
                 parent, target, target_name = _get_submodules(self.model, key)
             except AttributeError:
