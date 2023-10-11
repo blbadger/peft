@@ -618,15 +618,10 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                     no_split_module_classes=no_split_module_classes,
                     low_zero=(device_map == "balanced_low_0"),
                 )
-            print (f'max memory: {max_memory}')
             if isinstance(device_map, str):
                 device_map = infer_auto_device_map(
                     self, max_memory=max_memory
                 )
-            print (f'Device map before dispatch: {device_map}')
-            print (infer_auto_device_map(self))
-            print (f'Offload dir: {offload_dir}')
-            offload_dir = '.'
 
             dispatch_model(
                 self,
@@ -635,11 +630,10 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                 **dispatch_model_kwargs,
             )
 
-            print (infer_auto_device_map(self))
-            # hook = AlignDevicesHook(io_same_device=True)
-            # if self.peft_config[adapter_name].is_prompt_learning:
-            #     remove_hook_from_submodules(self.prompt_encoder)
-            # add_hook_to_module(self.get_base_model(), hook)
+            hook = AlignDevicesHook(io_same_device=True)
+            if self.peft_config[adapter_name].is_prompt_learning:
+                remove_hook_from_submodules(self.prompt_encoder)
+            add_hook_to_module(self.get_base_model(), hook)
 
         # Set model in evaluation mode to deactivate Dropout modules by default
         if not is_trainable:
