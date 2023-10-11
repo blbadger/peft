@@ -603,7 +603,6 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
             max_memory = kwargs.get("max_memory", None)
             offload_dir = kwargs.get("offload_folder", None)
             offload_index = kwargs.get("offload_index", None)
-            print (device_map, max_memory, offload_dir, offload_index)
 
             dispatch_model_kwargs = {}
             # Safety checker for previous `accelerate` versions
@@ -624,13 +623,16 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                 device_map = infer_auto_device_map(
                     self, max_memory=max_memory, no_split_module_classes=no_split_module_classes
                 )
+            print (f'Device map before dispatch: {device_map}')
+            print (offload_dir)
+            print (**dispatch_model_kwargs)
+
             dispatch_model(
                 self,
                 device_map=device_map,
                 offload_dir=offload_dir,
                 **dispatch_model_kwargs,
             )
-            print ([i for i in model.parameters()])
             hook = AlignDevicesHook(io_same_device=True)
             if self.peft_config[adapter_name].is_prompt_learning:
                 remove_hook_from_submodules(self.prompt_encoder)
