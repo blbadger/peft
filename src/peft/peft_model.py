@@ -624,9 +624,8 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                     self, max_memory=max_memory, no_split_module_classes=no_split_module_classes
                 )
             print (f'Device map before dispatch: {device_map}')
-            print (offload_dir)
-            print (**dispatch_model_kwargs)
-
+            offload_dir = 'cpu'
+    
             dispatch_model(
                 self,
                 device_map=device_map,
