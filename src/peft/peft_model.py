@@ -616,7 +616,6 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                     no_split_module_classes=no_split_module_classes,
                     low_zero=(device_map == "balanced_low_0"),
                 )
-            self = cpu_offload(self) # send model to cpu
             if isinstance(device_map, str):
                 device_map = infer_auto_device_map(
                     self, max_memory=max_memory
@@ -627,7 +626,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                 offload_dir=offload_dir,
                 **dispatch_model_kwargs,
             )
-            
+
             hook = AlignDevicesHook(io_same_device=True)
             if self.peft_config[adapter_name].is_prompt_learning:
                 remove_hook_from_submodules(self.prompt_encoder)
