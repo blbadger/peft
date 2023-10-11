@@ -636,10 +636,10 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
             )
 
             print (infer_auto_device_map(self))
-            hook = AlignDevicesHook(io_same_device=True)
-            if self.peft_config[adapter_name].is_prompt_learning:
-                remove_hook_from_submodules(self.prompt_encoder)
-            add_hook_to_module(self.get_base_model(), hook)
+            # hook = AlignDevicesHook(io_same_device=True)
+            # if self.peft_config[adapter_name].is_prompt_learning:
+            #     remove_hook_from_submodules(self.prompt_encoder)
+            # add_hook_to_module(self.get_base_model(), hook)
 
         # Set model in evaluation mode to deactivate Dropout modules by default
         if not is_trainable:
