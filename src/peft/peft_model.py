@@ -293,7 +293,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
             model = MODEL_TYPE_TO_PEFT_MODEL_MAPPING[config.task_type](model, config, adapter_name)
         model.load_adapter(model_id, adapter_name, is_trainable=is_trainable, **kwargs)
         print ('adapter loaded \n \n')
-        print ([i for i in model.parameters()])
+        # print ([i for i in model.parameters()])
         return model
 
     def _setup_prompt_encoder(self, adapter_name: str):
@@ -603,6 +603,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
             max_memory = kwargs.get("max_memory", None)
             offload_dir = kwargs.get("offload_folder", None)
             offload_index = kwargs.get("offload_index", None)
+            print (device_map, max_memory, offload_dir, offload_index)
 
             dispatch_model_kwargs = {}
             # Safety checker for previous `accelerate` versions
@@ -629,6 +630,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                 offload_dir=offload_dir,
                 **dispatch_model_kwargs,
             )
+            print ([i for i in model.parameters()])
             hook = AlignDevicesHook(io_same_device=True)
             if self.peft_config[adapter_name].is_prompt_learning:
                 remove_hook_from_submodules(self.prompt_encoder)
