@@ -208,7 +208,6 @@ class LoraModel(BaseTuner):
         if getattr(child, "state", None) is not None:
             new_module.state = child.state
             new_module.to(child.weight.device)
-        print (child.weight.device)
 
         # dispatch to correct device
         for name, module in new_module.named_modules():
@@ -373,7 +372,7 @@ class LoraModel(BaseTuner):
 
         key_list = [key for key, _ in self.model.named_modules() if "lora" not in key]
         desc = "Unloading " + ("and merging " if merge else "") + "model"
-        for key in key_list:
+        for key in tqdm(key_list, disable=not progressbar, desc=desc):
             try:
                 parent, target, target_name = _get_submodules(self.model, key)
             except AttributeError:

@@ -291,7 +291,10 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
             model = cls(model, config, adapter_name)
         else:
             model = MODEL_TYPE_TO_PEFT_MODEL_MAPPING[config.task_type](model, config, adapter_name)
+        print ([i for i in model.parameters()])
         model.load_adapter(model_id, adapter_name, is_trainable=is_trainable, **kwargs)
+        print ('adapter loaded \n \n')
+        print ([i for i in model.parameters])
         return model
 
     def _setup_prompt_encoder(self, adapter_name: str):
