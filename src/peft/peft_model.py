@@ -611,6 +611,8 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                 dispatch_model_kwargs["offload_index"] = offload_index
 
             no_split_module_classes = self._no_split_modules
+            print (f'no split modules: {self._no_split_modules}')
+            print (f'max memory: {max_memory}')
 
             if device_map != "sequential":
                 max_memory = get_balanced_memory(
@@ -621,11 +623,11 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                 )
             if isinstance(device_map, str):
                 device_map = infer_auto_device_map(
-                    self, max_memory=max_memory, no_split_module_classes=no_split_module_classes
+                    self, max_memory=max_memory
                 )
             print (f'Device map before dispatch: {device_map}')
             print (infer_auto_device_map(self))
-            
+
             dispatch_model(
                 self,
                 device_map=device_map,
