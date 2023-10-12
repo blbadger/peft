@@ -567,6 +567,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
 
     def load_adapter(self, model_id: str, adapter_name: str, is_trainable: bool = False, **kwargs: Any):
         from .mapping import PEFT_TYPE_TO_CONFIG_MAPPING
+        self.to('cpu')
 
         hf_hub_download_kwargs, kwargs = self._split_kwargs(kwargs)
         torch_device = infer_device()
