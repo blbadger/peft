@@ -567,6 +567,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
 
     def load_adapter(self, model_id: str, adapter_name: str, is_trainable: bool = False, **kwargs: Any):
         from .mapping import PEFT_TYPE_TO_CONFIG_MAPPING
+        original_mapping = infer_auto_device_map(self)
         self.to('cpu')
 
         hf_hub_download_kwargs, kwargs = self._split_kwargs(kwargs)
@@ -600,7 +601,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
         ):
             device_map = kwargs.get("device_map", "auto")
             max_memory = kwargs.get("max_memory", None)
-            offload_dir = kwargs.get("offload_folder", None)
+            offload_dir = kwargs.get("offload_folder", "offload_folder")
             offload_index = kwargs.get("offload_index", None)
 
             dispatch_model_kwargs = {}
@@ -623,7 +624,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                 )
             dispatch_model(
                 self,
-                device_map=device_map,
+                device_map=original_mapping,
                 offload_dir=offload_dir,
                 **dispatch_model_kwargs,
             )
