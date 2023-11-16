@@ -47,6 +47,7 @@ from peft import (
     prepare_model_for_int8_training,
     prepare_model_for_kbit_training,
 )
+from peft.utils import SAFETENSORS_WEIGHTS_NAME
 
 from .testing_utils import (
     require_auto_gptq,
@@ -180,7 +181,7 @@ class PeftBnbGPUExampleTests(unittest.TestCase):
             model.cpu().save_pretrained(tmp_dir)
 
             self.assertTrue("adapter_config.json" in os.listdir(tmp_dir))
-            self.assertTrue("adapter_model.bin" in os.listdir(tmp_dir))
+            self.assertTrue(SAFETENSORS_WEIGHTS_NAME in os.listdir(tmp_dir))
 
             # assert loss is not None
             self.assertIsNotNone(trainer.state.log_history[-1]["train_loss"])
@@ -238,7 +239,7 @@ class PeftBnbGPUExampleTests(unittest.TestCase):
             model.cpu().save_pretrained(tmp_dir)
 
             self.assertTrue("adapter_config.json" in os.listdir(tmp_dir))
-            self.assertTrue("adapter_model.bin" in os.listdir(tmp_dir))
+            self.assertTrue(SAFETENSORS_WEIGHTS_NAME in os.listdir(tmp_dir))
 
             # assert loss is not None
             self.assertIsNotNone(trainer.state.log_history[-1]["train_loss"])
@@ -299,7 +300,7 @@ class PeftBnbGPUExampleTests(unittest.TestCase):
             model.cpu().save_pretrained(tmp_dir)
 
             self.assertTrue("adapter_config.json" in os.listdir(tmp_dir))
-            self.assertTrue("adapter_model.bin" in os.listdir(tmp_dir))
+            self.assertTrue(SAFETENSORS_WEIGHTS_NAME in os.listdir(tmp_dir))
 
             # assert loss is not None
             self.assertIsNotNone(trainer.state.log_history[-1]["train_loss"])
@@ -360,7 +361,7 @@ class PeftBnbGPUExampleTests(unittest.TestCase):
             model.cpu().save_pretrained(tmp_dir)
 
             self.assertTrue("adapter_config.json" in os.listdir(tmp_dir))
-            self.assertTrue("adapter_model.bin" in os.listdir(tmp_dir))
+            self.assertTrue(SAFETENSORS_WEIGHTS_NAME in os.listdir(tmp_dir))
 
             # assert loss is not None
             self.assertIsNotNone(trainer.state.log_history[-1]["train_loss"])
@@ -424,7 +425,7 @@ class PeftBnbGPUExampleTests(unittest.TestCase):
             model.cpu().save_pretrained(tmp_dir)
 
             self.assertTrue("adapter_config.json" in os.listdir(tmp_dir))
-            self.assertTrue("adapter_model.bin" in os.listdir(tmp_dir))
+            self.assertTrue(SAFETENSORS_WEIGHTS_NAME in os.listdir(tmp_dir))
 
             # assert loss is not None
             self.assertIsNotNone(trainer.state.log_history[-1]["train_loss"])
@@ -484,7 +485,7 @@ class PeftBnbGPUExampleTests(unittest.TestCase):
             model.cpu().save_pretrained(tmp_dir)
 
             self.assertTrue("adapter_config.json" in os.listdir(tmp_dir))
-            self.assertTrue("adapter_model.bin" in os.listdir(tmp_dir))
+            self.assertTrue(SAFETENSORS_WEIGHTS_NAME in os.listdir(tmp_dir))
 
             # assert loss is not None
             self.assertIsNotNone(trainer.state.log_history[-1]["train_loss"])
@@ -545,7 +546,7 @@ class PeftBnbGPUExampleTests(unittest.TestCase):
             model.cpu().save_pretrained(tmp_dir)
 
             self.assertTrue("adapter_config.json" in os.listdir(tmp_dir))
-            self.assertTrue("adapter_model.bin" in os.listdir(tmp_dir))
+            self.assertTrue(SAFETENSORS_WEIGHTS_NAME in os.listdir(tmp_dir))
 
             # assert loss is not None
             self.assertIsNotNone(trainer.state.log_history[-1]["train_loss"])
@@ -643,7 +644,7 @@ class PeftBnbGPUExampleTests(unittest.TestCase):
             model.cpu().save_pretrained(tmp_dir)
 
             self.assertTrue("adapter_config.json" in os.listdir(tmp_dir))
-            self.assertTrue("adapter_model.bin" in os.listdir(tmp_dir))
+            self.assertTrue(SAFETENSORS_WEIGHTS_NAME in os.listdir(tmp_dir))
 
             # assert loss is not None
             self.assertIsNotNone(trainer.state.log_history[-1]["train_loss"])
@@ -661,7 +662,8 @@ class PeftGPTQGPUTests(unittest.TestCase):
         from transformers import GPTQConfig
 
         self.causal_lm_model_id = "marcsun13/opt-350m-gptq-4bit"
-        self.quantization_config = GPTQConfig(bits=4, disable_exllama=True)
+        # TODO : check if it works for Exllamav2 kernels
+        self.quantization_config = GPTQConfig(bits=4, use_exllama=False)
         self.tokenizer = AutoTokenizer.from_pretrained(self.causal_lm_model_id)
 
     def tearDown(self):
@@ -721,7 +723,7 @@ class PeftGPTQGPUTests(unittest.TestCase):
             model.cpu().save_pretrained(tmp_dir)
 
             self.assertTrue("adapter_config.json" in os.listdir(tmp_dir))
-            self.assertTrue("adapter_model.bin" in os.listdir(tmp_dir))
+            self.assertTrue(SAFETENSORS_WEIGHTS_NAME in os.listdir(tmp_dir))
 
             # assert loss is not None
             self.assertIsNotNone(trainer.state.log_history[-1]["train_loss"])
@@ -783,7 +785,7 @@ class PeftGPTQGPUTests(unittest.TestCase):
             model.cpu().save_pretrained(tmp_dir)
 
             self.assertTrue("adapter_config.json" in os.listdir(tmp_dir))
-            self.assertTrue("adapter_model.bin" in os.listdir(tmp_dir))
+            self.assertTrue(SAFETENSORS_WEIGHTS_NAME in os.listdir(tmp_dir))
 
             # assert loss is not None
             self.assertIsNotNone(trainer.state.log_history[-1]["train_loss"])
@@ -846,7 +848,7 @@ class PeftGPTQGPUTests(unittest.TestCase):
             model.cpu().save_pretrained(tmp_dir)
 
             self.assertTrue("adapter_config.json" in os.listdir(tmp_dir))
-            self.assertTrue("adapter_model.bin" in os.listdir(tmp_dir))
+            self.assertTrue(SAFETENSORS_WEIGHTS_NAME in os.listdir(tmp_dir))
 
             # assert loss is not None
             self.assertIsNotNone(trainer.state.log_history[-1]["train_loss"])
