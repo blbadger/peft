@@ -19,9 +19,9 @@ from dataclasses import asdict, replace
 from enum import Enum
 from functools import reduce
 from itertools import chain
+from typing import List, Optional
 
 import torch
-from torch import nn
 from tqdm import tqdm
 from transformers.pytorch_utils import Conv1D
 
@@ -107,6 +107,8 @@ class LoraModel(BaseTuner):
         - **peft_config** ([`LoraConfig`]): The configuration of the Lora model.
     """
 
+    prefix: str = "lora_"
+
     def __init__(self, model, config, adapter_name) -> None:
         super().__init__(model, config, adapter_name)
 
@@ -164,7 +166,7 @@ class LoraModel(BaseTuner):
             kwargs["gptq_quantization_config"] = quantization_config
 
         # TODO: better deal with that
-        if isinstance(target, LoraLayer) and isinstance(target, torch.nn.Conv2d):
+        if isinstance(target, Conv2d):
             target.update_layer_conv2d(
                 adapter_name,
                 r,
@@ -172,7 +174,7 @@ class LoraModel(BaseTuner):
                 lora_config.lora_dropout,
                 lora_config.init_lora_weights,
             )
-        elif isinstance(target, LoraLayer) and isinstance(target, torch.nn.Embedding):
+        elif isinstance(target, Embedding):
             target.update_layer_embedding(
                 adapter_name,
                 r,
@@ -180,8 +182,7 @@ class LoraModel(BaseTuner):
                 lora_config.lora_dropout,
                 lora_config.init_lora_weights,
             )
-
-        elif isinstance(target, LoraLayer):
+        elif isinstance(target, Linear):
             target.update_layer(
                 adapter_name,
                 r,
@@ -196,29 +197,36 @@ class LoraModel(BaseTuner):
                 new_module.requires_grad_(False)
             self._replace_module(parent, target_name, new_module, target)
 
-    @staticmethod
-    def _replace_module(parent, child_name, new_module, child):
+    def _replace_module(self, parent, child_name, new_module, child):
         setattr(parent, child_name, new_module)
         # It's not necessary to set requires_grad here, as that is handled by
         # _mark_only_adapters_as_trainable
-        new_module.weight = child.weight
-        if hasattr(child, "bias"):
-            new_module.bias = child.bias
+
+        # child layer wraps the original module, unpack it
+        if hasattr(child, "base_layer"):
+            child = child.base_layer
+
+        if not hasattr(new_module, "base_layer"):
+            new_module.weight = child.weight
+            if hasattr(child, "bias"):
+                new_module.bias = child.bias
 
         if getattr(child, "state", None) is not None:
-            new_module.state = child.state
+            if hasattr(new_module, "base_layer"):
+                new_module.base_layer.state = child.state
+            else:
+                new_module.state = child.state
             new_module.to(child.weight.device)
 
         # dispatch to correct device
         for name, module in new_module.named_modules():
-            if "lora_" in name:
-                module.to(child.weight.device)
-            if "ranknum" in name:
-                module.to(child.weight.device)
+            if (self.prefix in name) or ("ranknum" in name):
+                weight = child.qweight if hasattr(child, "qweight") else child.weight
+                module.to(weight.device)
 
     def _mark_only_adapters_as_trainable(self) -> None:
         for n, p in self.model.named_parameters():
-            if "lora_" not in n:
+            if self.prefix not in n:
                 p.requires_grad = False
 
         for active_adapter in self.active_adapters:
@@ -244,9 +252,13 @@ class LoraModel(BaseTuner):
 
         loaded_in_8bit = kwargs.pop("loaded_in_8bit", False)
         loaded_in_4bit = kwargs.pop("loaded_in_4bit", False)
-        bias = kwargs.pop("bias", False)
 
-        if loaded_in_8bit and isinstance(target, bnb.nn.Linear8bitLt):
+        if isinstance(target, BaseTunerLayer):
+            target_base_layer = target.get_base_layer()
+        else:
+            target_base_layer = target
+
+        if loaded_in_8bit and isinstance(target_base_layer, bnb.nn.Linear8bitLt):
             eightbit_kwargs = kwargs.copy()
             eightbit_kwargs.update(
                 {
@@ -256,10 +268,8 @@ class LoraModel(BaseTuner):
                     "index": target.index,
                 }
             )
-            new_module = Linear8bitLt(
-                adapter_name, target.in_features, target.out_features, bias=bias, **eightbit_kwargs
-            )
-        elif loaded_in_4bit and is_bnb_4bit_available() and isinstance(target, bnb.nn.Linear4bit):
+            new_module = Linear8bitLt(target, adapter_name, **eightbit_kwargs)
+        elif loaded_in_4bit and is_bnb_4bit_available() and isinstance(target_base_layer, bnb.nn.Linear4bit):
             fourbit_kwargs = kwargs.copy()
             fourbit_kwargs.update(
                 {
@@ -268,47 +278,37 @@ class LoraModel(BaseTuner):
                     "quant_type": target.weight.quant_type,
                 }
             )
-            new_module = Linear4bit(adapter_name, target.in_features, target.out_features, bias=bias, **fourbit_kwargs)
-        elif AutoGPTQQuantLinear is not None and isinstance(target, AutoGPTQQuantLinear):
-            new_module = QuantLinear(adapter_name, target, **kwargs)
+            new_module = Linear4bit(target, adapter_name, **fourbit_kwargs)
+        elif AutoGPTQQuantLinear is not None and isinstance(target_base_layer, AutoGPTQQuantLinear):
+            new_module = QuantLinear(target, adapter_name, **kwargs)
             target.weight = target.qweight
-        elif isinstance(target, torch.nn.Embedding):
+        elif isinstance(target_base_layer, torch.nn.Embedding):
             embedding_kwargs = kwargs.copy()
             embedding_kwargs.pop("fan_in_fan_out", None)
-            in_features, out_features = target.num_embeddings, target.embedding_dim
-            new_module = Embedding(adapter_name, in_features, out_features, **embedding_kwargs)
-        elif isinstance(target, torch.nn.Conv2d):
-            out_channels, in_channels = target.weight.size()[:2]
-            kernel_size = target.weight.size()[2:]
-            stride = target.stride
-            padding = target.padding
-            new_module = Conv2d(adapter_name, in_channels, out_channels, kernel_size, stride, padding, **kwargs)
+            new_module = Embedding(target, adapter_name, **embedding_kwargs)
+        elif isinstance(target_base_layer, torch.nn.Conv2d):
+            new_module = Conv2d(target, adapter_name, **kwargs)
+        elif isinstance(target_base_layer, torch.nn.Linear):
+            if kwargs["fan_in_fan_out"]:
+                warnings.warn(
+                    "fan_in_fan_out is set to True but the target module is `torch.nn.Linear`. "
+                    "Setting fan_in_fan_out to False."
+                )
+                kwargs["fan_in_fan_out"] = lora_config.fan_in_fan_out = False
+            new_module = Linear(target, adapter_name, **kwargs)
+        elif isinstance(target_base_layer, Conv1D):
+            if not kwargs["fan_in_fan_out"]:
+                warnings.warn(
+                    "fan_in_fan_out is set to False but the target module is `Conv1D`. "
+                    "Setting fan_in_fan_out to True."
+                )
+                kwargs["fan_in_fan_out"] = lora_config.fan_in_fan_out = True
+            new_module = Linear(target, adapter_name, is_target_conv_1d_layer=True, **kwargs)
         else:
-            if isinstance(target, torch.nn.Linear):
-                in_features, out_features = target.in_features, target.out_features
-                if kwargs["fan_in_fan_out"]:
-                    warnings.warn(
-                        "fan_in_fan_out is set to True but the target module is `torch.nn.Linear`. "
-                        "Setting fan_in_fan_out to False."
-                    )
-                    kwargs["fan_in_fan_out"] = lora_config.fan_in_fan_out = False
-            elif isinstance(target, Conv1D):
-                in_features, out_features = (
-                    target.weight.ds_shape if hasattr(target.weight, "ds_shape") else target.weight.shape
-                )
-                kwargs["is_target_conv_1d_layer"] = True
-                if not kwargs["fan_in_fan_out"]:
-                    warnings.warn(
-                        "fan_in_fan_out is set to False but the target module is `Conv1D`. "
-                        "Setting fan_in_fan_out to True."
-                    )
-                    kwargs["fan_in_fan_out"] = lora_config.fan_in_fan_out = True
-            else:
-                raise ValueError(
-                    f"Target module {target} is not supported. Currently, only the following modules are supported: "
-                    "`torch.nn.Linear`, `torch.nn.Embedding`, `torch.nn.Conv2d`, `transformers.pytorch_utils.Conv1D`."
-                )
-            new_module = Linear(adapter_name, in_features, out_features, bias=bias, **kwargs)
+            raise ValueError(
+                f"Target module {target} is not supported. Currently, only the following modules are supported: "
+                "`torch.nn.Linear`, `torch.nn.Embedding`, `torch.nn.Conv2d`, `transformers.pytorch_utils.Conv1D`."
+            )
 
         return new_module
 
@@ -354,6 +354,7 @@ class LoraModel(BaseTuner):
                     warnings.warn("Adapter cannot be set when the model is merged. Unmerging the model first.")
                     module.unmerge()
                 module.set_adapter(adapter_name)
+        self.active_adapter = adapter_name
 
     @staticmethod
     def _prepare_adapter_config(peft_config, model_config):
@@ -365,65 +366,31 @@ class LoraModel(BaseTuner):
             )
         return peft_config
 
-    def _unload_and_optionally_merge(self, merge=True, progressbar: bool = False, safe_merge: bool = False):
+    def _unload_and_optionally_merge(
+        self,
+        merge=True,
+        progressbar: bool = False,
+        safe_merge: bool = False,
+        adapter_names: Optional[List[str]] = None,
+    ):
         if merge:
             if getattr(self.model, "quantization_method", None) == "gptq":
                 raise ValueError("Cannot merge LORA layers when the model is gptq quantized")
 
-        key_list = [key for key, _ in self.model.named_modules() if "lora" not in key]
+        key_list = [key for key, _ in self.model.named_modules() if self.prefix not in key]
         desc = "Unloading " + ("and merging " if merge else "") + "model"
         for key in tqdm(key_list, disable=not progressbar, desc=desc):
             try:
                 parent, target, target_name = _get_submodules(self.model, key)
             except AttributeError:
                 continue
-            if isinstance(target, LoraLayer):
-                if isinstance(target, nn.Embedding):
-                    new_module = torch.nn.Embedding(target.in_features, target.out_features)
-                elif isinstance(target, nn.Conv2d):
-                    new_module = torch.nn.Conv2d(
-                        target.in_channels,
-                        target.out_channels,
-                        kernel_size=target.kernel_size,
-                        stride=target.stride,
-                        padding=target.padding,
-                        dilation=target.dilation,
-                    )
-                elif is_bnb_available() and isinstance(target, bnb.nn.Linear8bitLt):
-                    bias = target.bias is not None
-                    new_module = bnb.nn.Linear8bitLt(
-                        target.in_features,
-                        target.out_features,
-                        bias=bias,
-                        has_fp16_weights=target.state.has_fp16_weights,
-                        memory_efficient_backward=target.state.memory_efficient_backward,
-                        threshold=target.state.threshold,
-                        index=target.index,
-                        device=target.weight.device,
-                    )
-                elif is_bnb_4bit_available() and isinstance(target, bnb.nn.Linear4bit):
-                    bias = target.bias is not None
-                    new_module = bnb.nn.Linear4bit(
-                        target.in_features,
-                        target.out_features,
-                        bias=bias,
-                        compute_dtype=target.compute_dtype,
-                        compress_statistics=target.weight.compress_statistics,
-                        quant_type=target.weight.quant_type,
-                        device=target.weight.device,
-                    )
-                else:
-                    bias = target.bias is not None
-                    if getattr(target, "is_target_conv_1d_layer", False):
-                        new_module = Conv1D(target.out_features, target.in_features)
-                    else:
-                        new_module = torch.nn.Linear(target.in_features, target.out_features, bias=bias)
-                if merge:
-                    target.merge(safe_merge=safe_merge)
-                self._replace_module(parent, target_name, new_module, target)
 
-            # save any additional trainable modules part of `modules_to_save`
-            if isinstance(target, ModulesToSaveWrapper):
+            if hasattr(target, "base_layer"):
+                if merge:
+                    target.merge(safe_merge=safe_merge, adapter_names=adapter_names)
+                self._replace_module(parent, target_name, target.get_base_layer(), target)
+            elif isinstance(target, ModulesToSaveWrapper):
+                # save any additional trainable modules part of `modules_to_save`
                 setattr(parent, target_name, target.modules_to_save[target.active_adapter])
 
         return self.model
@@ -525,7 +492,7 @@ class LoraModel(BaseTuner):
         # Do we really need that?
         _freeze_adapter(self.model, adapter_name)
 
-        key_list = [key for key, _ in self.model.named_modules() if "lora" not in key]
+        key_list = [key for key, _ in self.model.named_modules() if self.prefix not in key]
         for key in key_list:
             _, target, _ = _get_submodules(self.model, key)
             if isinstance(target, LoraLayer):
@@ -649,32 +616,20 @@ class LoraModel(BaseTuner):
             raise ValueError(f"Adapter {adapter_name} does not exist")
         del self.peft_config[adapter_name]
 
-        key_list = [key for key, _ in self.model.named_modules() if "lora" not in key]
+        key_list = [key for key, _ in self.model.named_modules() if self.prefix not in key]
+        new_adapter = None
         for key in key_list:
             _, target, _ = _get_submodules(self.model, key)
             if isinstance(target, LoraLayer):
-                for attr in [
-                    "r",
-                    "lora_alpha",
-                    "scaling",
-                    "lora_A",
-                    "lora_B",
-                    "lora_embedding_A",
-                    "lora_embedding_B",
-                    "lora_dropout",
-                ]:
-                    if adapter_name in getattr(target, attr):
-                        getattr(target, attr).pop(adapter_name)
-                if adapter_name in target.active_adapters:
-                    resetting_active_adapter = (
-                        list(self.peft_config.keys())[0] if len(self.peft_config) > 0 else "default"
-                    )
-                    warnings.warn(
-                        f"Adapter {adapter_name} was active which is now deleted. Setting active adapter to {resetting_active_adapter}. "
-                    )
-                    target.set_adapter(resetting_active_adapter)
+                target.delete_adapter(adapter_name)
+                if new_adapter is None:
+                    new_adapter = target.active_adapters[:]
 
-    def merge_and_unload(self, progressbar: bool = False, safe_merge: bool = False):
+        self.active_adapter = new_adapter or []
+
+    def merge_and_unload(
+        self, progressbar: bool = False, safe_merge: bool = False, adapter_names: Optional[List[str]] = None
+    ):
         r"""
         This method merges the LoRa layers into the base model. This is needed if someone wants to use the base model
         as a standalone model.
@@ -685,7 +640,9 @@ class LoraModel(BaseTuner):
             safe_merge (`bool`):
                 whether to activate the safe merging check to check if there is any potential Nan in the adapter
                 weights
-
+            adapter_names (`List[str]`, *optional*):
+                The list of adapter names that should be merged. If None, all active adapters will be merged. Defaults
+                to `None`.
         Example:
 
         ```py
@@ -698,7 +655,9 @@ class LoraModel(BaseTuner):
         >>> merged_model = model.merge_and_unload()
         ```
         """
-        return self._unload_and_optionally_merge(progressbar=progressbar, safe_merge=safe_merge)
+        return self._unload_and_optionally_merge(
+            progressbar=progressbar, safe_merge=safe_merge, adapter_names=adapter_names
+        )
 
     def unload(self):
         """
