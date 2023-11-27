@@ -22,6 +22,7 @@ from itertools import chain
 from typing import List, Optional
 
 import torch
+from accelerate.hooks import AlignDevicesHook
 from tqdm import tqdm
 from transformers.pytorch_utils import Conv1D
 
@@ -39,8 +40,6 @@ from peft.utils import (
 from .config import LoraConfig
 from .gptq import QuantLinear
 from .layer import Conv2d, Embedding, Linear, LoraLayer
-
-from accelerate.hooks import AlignDevicesHook
 
 
 if is_bnb_available():
@@ -388,11 +387,19 @@ class LoraModel(BaseTuner):
             except AttributeError:
                 continue
 
-            if hasattr(parent, "_hf_hook") and isinstance(parent._hf_hook, AlignDevicesHook) and module._hf_hook.offload:
+            if (
+                hasattr(parent, "_hf_hook")
+                and isinstance(parent._hf_hook, AlignDevicesHook)
+                and module._hf_hook.offload
+            ):
                 parent._hf_hook.pre_forward(parent)
-            if hasattr(target, "_hf_hook") and isinstance(target._hf_hook, AlignDevicesHook) and module._hf_hook.offload:
+            if (
+                hasattr(target, "_hf_hook")
+                and isinstance(target._hf_hook, AlignDevicesHook)
+                and module._hf_hook.offload
+            ):
                 target._hf_hook.pre_forward(target)
-                    
+
             if hasattr(target, "base_layer"):
                 if merge:
                     target.merge(safe_merge=safe_merge, adapter_names=adapter_names)
@@ -401,9 +408,17 @@ class LoraModel(BaseTuner):
                 # save any additional trainable modules part of `modules_to_save`
                 setattr(parent, target_name, target.modules_to_save[target.active_adapter])
 
-            if hasattr(parent, "_hf_hook") and isinstance(parent._hf_hook, AlignDevicesHook) and module._hf_hook.offload:
+            if (
+                hasattr(parent, "_hf_hook")
+                and isinstance(parent._hf_hook, AlignDevicesHook)
+                and module._hf_hook.offload
+            ):
                 parent._hf_hook.post_forward(parent, torch.tensor([]))
-            if hasattr(target, "_hf_hook") and isinstance(target._hf_hook, AlignDevicesHook) and module._hf_hook.offload:
+            if (
+                hasattr(target, "_hf_hook")
+                and isinstance(target._hf_hook, AlignDevicesHook)
+                and module._hf_hook.offload
+            ):
                 target._hf_hook.post_forward(target, torch.tensor([]))
 
         return self.model

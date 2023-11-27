@@ -20,12 +20,12 @@ from typing import Any, List, Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from accelerate.hooks import AlignDevicesHook
+from accelerate.utils import named_module_tensors
 from transformers.pytorch_utils import Conv1D
 
 from peft.tuners.tuners_utils import BaseTunerLayer
 from peft.utils.other import transpose
-from accelerate.hooks import AlignDevicesHook
-from accelerate.utils import named_module_tensors
 
 
 class LoraLayer(BaseTunerLayer):
@@ -246,14 +246,15 @@ class Linear(nn.Module, LoraLayer):
             adapter_names = self.active_adapters
 
         for active_adapter in adapter_names:
-
             if active_adapter in self.lora_A.keys():
                 base_layer = self.get_base_layer()
-                if (hasattr(base_layer, "_hf_hook") 
-                    and isinstance(base_layer._hf_hook, AlignDevicesHook) 
+                if (
+                    hasattr(base_layer, "_hf_hook")
+                    and isinstance(base_layer._hf_hook, AlignDevicesHook)
                     and base_layer._hf_hook.offload
-                    ):
+                ):
                     base_layer._hf_hook.pre_forward(base_layer)
+
                 if safe_merge:
                     # Note that safe_merge will be slower than the normal merge
                     # because of the copy operation.
@@ -268,18 +269,16 @@ class Linear(nn.Module, LoraLayer):
                     base_layer.weight.data = orig_weights
                 else:
                     base_layer.weight.data += self.get_delta_weight(active_adapter)
-        
-                    if (hasattr(base_layer, "_hf_hook") 
-                        and isinstance(base_layer, AlignDevicesHook) 
+                    if (
+                        hasattr(base_layer, "_hf_hook")
+                        and isinstance(base_layer, AlignDevicesHook)
                         and base_layer._hf_hook.offload
-                        ):
+                    ):
                         # align device hook weight map must be updated
                         base_layer._hf_hook.weights_map = {
-                            name: param.to("cpu") 
-                            for name, param in named_module_tensors(base_layer)
-                            }
+                            name: param.to("cpu") for name, param in named_module_tensors(base_layer)
+                        }
                         base_layer._hf_hook.post_forward(base_layer, torch.tensor([]))
-
 
     def unmerge(self) -> None:
         if not self.merged:
@@ -299,16 +298,18 @@ class Linear(nn.Module, LoraLayer):
                 The name of the adapter for which the delta weight should be computed.
         """
 
-        if (hasattr(self.lora_A[adapter], "_hf_hook") 
-            and isinstance(self.lora_A[adapter]._hf_hook, AlignDevicesHook) 
+        if (
+            hasattr(self.lora_A[adapter], "_hf_hook")
+            and isinstance(self.lora_A[adapter]._hf_hook, AlignDevicesHook)
             and self.lora_A[adapter]._hf_hook.offload
-            ):
+        ):
             self.lora_A[adapter]._hf_hook.pre_forward(self.lora_A[adapter])
 
-        if (hasattr(self.lora_B[adapter], "_hf_hook") 
-            and isinstance(self.lora_B[adapter]._hf_hook, AlignDevicesHook) 
+        if (
+            hasattr(self.lora_B[adapter], "_hf_hook")
+            and isinstance(self.lora_B[adapter]._hf_hook, AlignDevicesHook)
             and self.lora_B[adapter]._hf_hook.offload
-            ):
+        ):
             self.lora_B[adapter]._hf_hook.pre_forward(self.lora_B[adapter])
 
         device = self.lora_B[adapter].weight.device
@@ -335,16 +336,18 @@ class Linear(nn.Module, LoraLayer):
             self.lora_A[adapter].weight.data = weight_A.to(dtype)
             self.lora_B[adapter].weight.data = weight_B.to(dtype)
 
-        if (hasattr(self.lora_A[adapter], "_hf_hook") 
-            and isinstance(self.lora_A[adapter]._hf_hook, AlignDevicesHook) 
+        if (
+            hasattr(self.lora_A[adapter], "_hf_hook")
+            and isinstance(self.lora_A[adapter]._hf_hook, AlignDevicesHook)
             and self.lora_A[adapter]._hf_hook.offload
-            ):
+        ):
             self.lora_A[adapter]._hf_hook.post_forward(self.lora_A[adapter], torch.tensor([]))
 
-        if (hasattr(self.lora_B[adapter], "_hf_hook") 
-            and isinstance(self.lora_B[adapter]._hf_hook, AlignDevicesHook) 
+        if (
+            hasattr(self.lora_B[adapter], "_hf_hook")
+            and isinstance(self.lora_B[adapter]._hf_hook, AlignDevicesHook)
             and self.lora_B[adapter]._hf_hook.offload
-            ):
+        ):
             self.lora_B[adapter]._hf_hook.post_forward(self.lora_B[adapter], torch.tensor([]))
 
         return output_tensor
@@ -417,7 +420,6 @@ class Embedding(nn.Module, LoraLayer):
 
         if adapter_names is None:
             adapter_names = self.active_adapters
-
 
         for active_adapter in adapter_names:
             if active_adapter in self.lora_embedding_A.keys():
