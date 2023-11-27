@@ -409,19 +409,19 @@ class LoraModel(BaseTuner):
                 # save any additional trainable modules part of `modules_to_save`
                 setattr(parent, target_name, target.modules_to_save[target.active_adapter])
 
-            if (
-                hasattr(parent, "_hf_hook")
-                and isinstance(parent._hf_hook, AlignDevicesHook)
-                and parent._hf_hook.offload
-            ):
-                parent._hf_hook.post_forward(parent, torch.tensor([]))
+            # if (
+            #     hasattr(parent, "_hf_hook")
+            #     and isinstance(parent._hf_hook, AlignDevicesHook)
+            #     and parent._hf_hook.offload
+            # ):
+            #     parent._hf_hook.post_forward(parent, torch.tensor([]))
 
-            if (
-                hasattr(target, "_hf_hook")
-                and isinstance(target._hf_hook, AlignDevicesHook)
-                and target._hf_hook.offload
-            ):
-                target._hf_hook.post_forward(target, torch.tensor([]))
+            # if (
+            #     hasattr(target, "_hf_hook")
+            #     and isinstance(target._hf_hook, AlignDevicesHook)
+            #     and target._hf_hook.offload
+            # ):
+            #     target._hf_hook.post_forward(target, torch.tensor([]))
 
         return self.model
 
