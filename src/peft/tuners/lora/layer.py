@@ -191,7 +191,7 @@ class LoraLayer(BaseTunerLayer):
                 self.scaling[active_adapter] /= scale
 
 def onload_delta_wrapper(func):
-    def wrapper(*args, **kwargs):
+    def wrapper(self, *args, **kwargs):
         if hasattr(self.lora_A[adapter], "_hf_hook") and isinstance(self.lora_A[adapter]._hf_hook, AlignDevicesHook):
             self.lora_A[adapter]._hf_hook.pre_forward(self.lora_A[adapter])
         if hasattr(self.lora_B[adapter], "_hf_hook") and isinstance(self.lora_B[adapter]._hf_hook, AlignDevicesHook):
