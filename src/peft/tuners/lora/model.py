@@ -388,17 +388,23 @@ class LoraModel(BaseTuner):
             except AttributeError:
                 continue
 
+            if hasattr(parent, "_hf_hook") and isinstance(parent._hf_hook, AlignDevicesHook) and module._hf_hook.offload:
+                parent._hf_hook.pre_forward(parent)
+            if hasattr(target, "_hf_hook") and isinstance(target._hf_hook, AlignDevicesHook) and module._hf_hook.offload:
+                target._hf_hook.pre_forward(target)
+                    
             if hasattr(target, "base_layer"):
                 if merge:
                     target.merge(safe_merge=safe_merge, adapter_names=adapter_names)
-                if hasattr(parent, "_hf_hook") and isinstance(parent._hf_hook, AlignDevicesHook):
-                    parent._hf_hook.pre_forward(parent)
-                if hasattr(target, "_hf_hook") and isinstance(target._hf_hook, AlignDevicesHook):
-                    target._hf_hook.pre_forward(target)
                 self._replace_module(parent, target_name, target.get_base_layer(), target)
             elif isinstance(target, ModulesToSaveWrapper):
                 # save any additional trainable modules part of `modules_to_save`
                 setattr(parent, target_name, target.modules_to_save[target.active_adapter])
+
+            if hasattr(parent, "_hf_hook") and isinstance(parent._hf_hook, AlignDevicesHook) and module._hf_hook.offload:
+                parent._hf_hook.post_forward(parent, torch.tensor([]))
+            if hasattr(target, "_hf_hook") and isinstance(target._hf_hook, AlignDevicesHook) and module._hf_hook.offload:
+                target._hf_hook.post_forward(target, torch.tensor([]))
 
         return self.model
 
