@@ -190,6 +190,22 @@ class LoraLayer(BaseTunerLayer):
             else:
                 self.scaling[active_adapter] /= scale
 
+def onload_delta_wrapper(func):
+    def wrapper(*args, **kwargs):
+        if hasattr(self.lora_A[adapter], "_hf_hook") and isinstance(self.lora_A[adapter]._hf_hook, AlignDevicesHook):
+            self.lora_A[adapter]._hf_hook.pre_forward(self.lora_A[adapter])
+        if hasattr(self.lora_B[adapter], "_hf_hook") and isinstance(self.lora_B[adapter]._hf_hook, AlignDevicesHook):
+            self.lora_B[adapter]._hf_hook.pre_forward(self.lora_B[adapter])
+
+        func(*args, **kwargs)
+
+        if hasattr(self.lora_A[adapter], "_hf_hook") and isinstance(self.lora_A[adapter]._hf_hook, AlignDevicesHook):
+            self.lora_A[adapter]._hf_hook.post_forward(self.lora_A[adapter], torch.tensor([]))
+        if hasattr(self.lora_B[adapter], "_hf_hook") and isinstance(self.lora_B[adapter]._hf_hook, AlignDevicesHook):
+            self.lora_B[adapter]._hf_hook.post_forward(self.lora_B[adapter], torch.tensor([]))
+
+    return wrapper 
+
 
 # Below code is based on https://github.com/microsoft/LoRA/blob/main/loralib/layers.py
 # and modified to work with PyTorch FSDP
@@ -280,6 +296,7 @@ class Linear(nn.Module, LoraLayer):
             if active_adapter in self.lora_A.keys():
                 self.get_base_layer().weight.data -= self.get_delta_weight(active_adapter)
 
+    @onload_delta_wrapper
     def get_delta_weight(self, adapter) -> torch.Tensor:
         """
         Compute the delta weight for the given adapter.
@@ -288,10 +305,10 @@ class Linear(nn.Module, LoraLayer):
             adapter (str):
                 The name of the adapter for which the delta weight should be computed.
         """
-        if hasattr(self.lora_A[adapter], "_hf_hook") and isinstance(self.lora_A[adapter]._hf_hook, AlignDevicesHook):
-            self.lora_A[adapter]._hf_hook.pre_forward(self.lora_A[adapter])
-        if hasattr(self.lora_B[adapter], "_hf_hook") and isinstance(self.lora_B[adapter]._hf_hook, AlignDevicesHook):
-            self.lora_B[adapter]._hf_hook.pre_forward(self.lora_B[adapter])
+        # if hasattr(self.lora_A[adapter], "_hf_hook") and isinstance(self.lora_A[adapter]._hf_hook, AlignDevicesHook):
+        #     self.lora_A[adapter]._hf_hook.pre_forward(self.lora_A[adapter])
+        # if hasattr(self.lora_B[adapter], "_hf_hook") and isinstance(self.lora_B[adapter]._hf_hook, AlignDevicesHook):
+        #     self.lora_B[adapter]._hf_hook.pre_forward(self.lora_B[adapter])
 
         device = self.lora_B[adapter].weight.device
         dtype = self.lora_B[adapter].weight.dtype
@@ -317,10 +334,10 @@ class Linear(nn.Module, LoraLayer):
             self.lora_A[adapter].weight.data = weight_A.to(dtype)
             self.lora_B[adapter].weight.data = weight_B.to(dtype)
 
-        if hasattr(self.lora_A[adapter], "_hf_hook") and isinstance(self.lora_A[adapter]._hf_hook, AlignDevicesHook):
-            self.lora_A[adapter]._hf_hook.post_forward(self.lora_A[adapter], torch.tensor([]))
-        if hasattr(self.lora_B[adapter], "_hf_hook") and isinstance(self.lora_B[adapter]._hf_hook, AlignDevicesHook):
-            self.lora_B[adapter]._hf_hook.post_forward(self.lora_B[adapter], torch.tensor([]))
+        # if hasattr(self.lora_A[adapter], "_hf_hook") and isinstance(self.lora_A[adapter]._hf_hook, AlignDevicesHook):
+        #     self.lora_A[adapter]._hf_hook.post_forward(self.lora_A[adapter], torch.tensor([]))
+        # if hasattr(self.lora_B[adapter], "_hf_hook") and isinstance(self.lora_B[adapter]._hf_hook, AlignDevicesHook):
+        #     self.lora_B[adapter]._hf_hook.post_forward(self.lora_B[adapter], torch.tensor([]))
 
         return output_tensor
 
@@ -640,7 +657,7 @@ class Conv2d(nn.Module, LoraLayer):
             self.lora_A[adapter]._hf_hook.post_forward(self.lora_A[adapter], torch.tensor([]))
         if hasattr(self.lora_B[adapter], "_hf_hook") and isinstance(self.lora_B[adapter]._hf_hook, AlignDevicesHook):
             self.lora_B[adapter]._hf_hook.post_forward(self.lora_B[adapter], torch.tensor([]))
-            
+
         return output_tensor
 
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
