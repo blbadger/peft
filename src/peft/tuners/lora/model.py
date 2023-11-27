@@ -390,13 +390,14 @@ class LoraModel(BaseTuner):
             if (
                 hasattr(parent, "_hf_hook")
                 and isinstance(parent._hf_hook, AlignDevicesHook)
-                and module._hf_hook.offload
+                and parent._hf_hook.offload
             ):
                 parent._hf_hook.pre_forward(parent)
+                
             if (
                 hasattr(target, "_hf_hook")
                 and isinstance(target._hf_hook, AlignDevicesHook)
-                and module._hf_hook.offload
+                and target._hf_hook.offload
             ):
                 target._hf_hook.pre_forward(target)
 
@@ -411,13 +412,14 @@ class LoraModel(BaseTuner):
             if (
                 hasattr(parent, "_hf_hook")
                 and isinstance(parent._hf_hook, AlignDevicesHook)
-                and module._hf_hook.offload
+                and parent._hf_hook.offload
             ):
                 parent._hf_hook.post_forward(parent, torch.tensor([]))
+
             if (
                 hasattr(target, "_hf_hook")
                 and isinstance(target._hf_hook, AlignDevicesHook)
-                and module._hf_hook.offload
+                and target._hf_hook.offload
             ):
                 target._hf_hook.post_forward(target, torch.tensor([]))
 
