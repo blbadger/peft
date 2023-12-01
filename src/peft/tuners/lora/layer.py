@@ -20,12 +20,12 @@ from typing import Any, List, Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from accelerate.hooks import AlignDevicesHook
+from accelerate.utils import named_module_tensors
 from transformers.pytorch_utils import Conv1D
 
 from peft.tuners.tuners_utils import BaseTunerLayer
 from peft.utils.other import transpose
-from accelerate.hooks import AlignDevicesHook
-from accelerate.utils import named_module_tensors
 
 
 class LoraLayer(BaseTunerLayer):
@@ -190,7 +190,13 @@ class LoraLayer(BaseTunerLayer):
             else:
                 self.scaling[active_adapter] /= scale
 
+
 def onload_delta_wrapper(func):
+    """
+    Performs LoRA parameter onloading and offloading required for get_delta_weight() to function properly with
+    offloaded modules.
+    """
+
     def wrapper(self, adapter):
         if hasattr(self.lora_A[adapter], "_hf_hook") and isinstance(self.lora_A[adapter]._hf_hook, AlignDevicesHook):
             self.lora_A[adapter]._hf_hook.pre_forward(self.lora_A[adapter])
@@ -198,7 +204,6 @@ def onload_delta_wrapper(func):
             self.lora_B[adapter]._hf_hook.pre_forward(self.lora_B[adapter])
 
         output = func(self, adapter)
-        print ('function output: ', output)
 
         if hasattr(self.lora_A[adapter], "_hf_hook") and isinstance(self.lora_A[adapter]._hf_hook, AlignDevicesHook):
             self.lora_A[adapter]._hf_hook.post_forward(self.lora_A[adapter], torch.tensor([]))
@@ -283,8 +288,10 @@ class Linear(nn.Module, LoraLayer):
                     base_layer.weight.data = orig_weights
                 else:
                     base_layer.weight.data += self.get_delta_weight(active_adapter)
-                    base_layer._hf_hook.weights_map = {name: param.to("cpu") for name, param in named_module_tensors(base_layer)}
-                    
+                    base_layer._hf_hook.weights_map = {
+                        name: param.to("cpu") for name, param in named_module_tensors(base_layer)
+                    }
+
                 if hasattr(base_layer, "_hf_hook") and isinstance(base_layer._hf_hook, AlignDevicesHook):
                     base_layer._hf_hook.post_forward(base_layer, torch.tensor([]))
                 self.merged_adapters.append(active_adapter)
@@ -307,10 +314,6 @@ class Linear(nn.Module, LoraLayer):
             adapter (str):
                 The name of the adapter for which the delta weight should be computed.
         """
-        # if hasattr(self.lora_A[adapter], "_hf_hook") and isinstance(self.lora_A[adapter]._hf_hook, AlignDevicesHook):
-        #     self.lora_A[adapter]._hf_hook.pre_forward(self.lora_A[adapter])
-        # if hasattr(self.lora_B[adapter], "_hf_hook") and isinstance(self.lora_B[adapter]._hf_hook, AlignDevicesHook):
-        #     self.lora_B[adapter]._hf_hook.pre_forward(self.lora_B[adapter])
 
         device = self.lora_B[adapter].weight.device
         dtype = self.lora_B[adapter].weight.dtype
@@ -335,11 +338,6 @@ class Linear(nn.Module, LoraLayer):
             # cast back the weights
             self.lora_A[adapter].weight.data = weight_A.to(dtype)
             self.lora_B[adapter].weight.data = weight_B.to(dtype)
-
-        # if hasattr(self.lora_A[adapter], "_hf_hook") and isinstance(self.lora_A[adapter]._hf_hook, AlignDevicesHook):
-        #     self.lora_A[adapter]._hf_hook.post_forward(self.lora_A[adapter], torch.tensor([]))
-        # if hasattr(self.lora_B[adapter], "_hf_hook") and isinstance(self.lora_B[adapter]._hf_hook, AlignDevicesHook):
-        #     self.lora_B[adapter]._hf_hook.post_forward(self.lora_B[adapter], torch.tensor([]))
 
         return output_tensor
 
@@ -412,7 +410,6 @@ class Embedding(nn.Module, LoraLayer):
         if adapter_names is None:
             adapter_names = self.active_adapters
 
-
         for active_adapter in adapter_names:
             if active_adapter in self.lora_embedding_A.keys():
                 base_layer = self.get_base_layer()
@@ -432,8 +429,10 @@ class Embedding(nn.Module, LoraLayer):
                     base_layer.weight.data = orig_weights
                 else:
                     base_layer.weight.data += self.get_delta_weight(active_adapter)
-                    base_layer._hf_hook.weights_map = {name: param.to("cpu") for name, param in named_module_tensors(base_layer)}
-                    
+                    base_layer._hf_hook.weights_map = {
+                        name: param.to("cpu") for name, param in named_module_tensors(base_layer)
+                    }
+
                 if hasattr(base_layer, "_hf_hook") and isinstance(base_layer._hf_hook, AlignDevicesHook):
                     base_layer._hf_hook.post_forward(base_layer, torch.tensor([]))
 
@@ -448,6 +447,7 @@ class Embedding(nn.Module, LoraLayer):
             if active_adapter in self.lora_embedding_A.keys():
                 self.get_base_layer().weight.data -= self.get_delta_weight(active_adapter)
 
+    @onload_delta_wrapper
     def get_delta_weight(self, adapter) -> torch.Tensor:
         """
         Compute the delta weight for the given adapter.
@@ -456,11 +456,6 @@ class Embedding(nn.Module, LoraLayer):
             adapter (str):
                 The name of the adapter for which the delta weight should be computed.
         """
-        if hasattr(self.lora_A[adapter], "_hf_hook") and isinstance(self.lora_A[adapter]._hf_hook, AlignDevicesHook):
-            self.lora_A[adapter]._hf_hook.pre_forward(self.lora_A[adapter])
-        if hasattr(self.lora_B[adapter], "_hf_hook") and isinstance(self.lora_B[adapter]._hf_hook, AlignDevicesHook):
-            self.lora_B[adapter]._hf_hook.pre_forward(self.lora_B[adapter])
-
         device = self.lora_embedding_B[adapter].device
         dtype = self.lora_embedding_A[adapter].dtype
 
@@ -484,11 +479,6 @@ class Embedding(nn.Module, LoraLayer):
             # cast back the weights
             self.lora_embedding_A[adapter] = weight_A.to(dtype)
             self.lora_embedding_B[adapter] = weight_B.to(dtype)
-
-        if hasattr(self.lora_A[adapter], "_hf_hook") and isinstance(self.lora_A[adapter]._hf_hook, AlignDevicesHook):
-            self.lora_A[adapter]._hf_hook.post_forward(self.lora_A[adapter], torch.tensor([]))
-        if hasattr(self.lora_B[adapter], "_hf_hook") and isinstance(self.lora_B[adapter]._hf_hook, AlignDevicesHook):
-            self.lora_B[adapter]._hf_hook.post_forward(self.lora_B[adapter], torch.tensor([]))
 
         return output_tensor
 
@@ -588,8 +578,10 @@ class Conv2d(nn.Module, LoraLayer):
                     base_layer.weight.data = orig_weights
                 else:
                     base_layer.weight.data += self.get_delta_weight(active_adapter)
-                    base_layer._hf_hook.weights_map = {name: param.to("cpu") for name, param in named_module_tensors(base_layer)}
-                    
+                    base_layer._hf_hook.weights_map = {
+                        name: param.to("cpu") for name, param in named_module_tensors(base_layer)
+                    }
+
                 if hasattr(base_layer, "_hf_hook") and isinstance(base_layer._hf_hook, AlignDevicesHook):
                     base_layer._hf_hook.post_forward(base_layer, torch.tensor([]))
 
@@ -604,6 +596,7 @@ class Conv2d(nn.Module, LoraLayer):
             if active_adapter in self.lora_A.keys():
                 self.get_base_layer().weight.data -= self.get_delta_weight(active_adapter)
 
+    @onload_delta_wrapper
     def get_delta_weight(self, adapter) -> torch.Tensor:
         """
         Compute the delta weight for the given adapter.
@@ -612,10 +605,6 @@ class Conv2d(nn.Module, LoraLayer):
             adapter (str):
                 The name of the adapter for which the delta weight should be computed.
         """
-        if hasattr(self.lora_A[adapter], "_hf_hook") and isinstance(self.lora_A[adapter]._hf_hook, AlignDevicesHook):
-            self.lora_A[adapter]._hf_hook.pre_forward(self.lora_A[adapter])
-        if hasattr(self.lora_B[adapter], "_hf_hook") and isinstance(self.lora_B[adapter]._hf_hook, AlignDevicesHook):
-            self.lora_B[adapter]._hf_hook.pre_forward(self.lora_B[adapter])
 
         device = self.lora_B[adapter].weight.device
         dtype = self.lora_A[adapter].weight.dtype
@@ -654,11 +643,6 @@ class Conv2d(nn.Module, LoraLayer):
             # cast back the weights
             self.lora_A[adapter].weight.data = weight_A.to(dtype)
             self.lora_B[adapter].weight.data = weight_B.to(dtype)
-
-        if hasattr(self.lora_A[adapter], "_hf_hook") and isinstance(self.lora_A[adapter]._hf_hook, AlignDevicesHook):
-            self.lora_A[adapter]._hf_hook.post_forward(self.lora_A[adapter], torch.tensor([]))
-        if hasattr(self.lora_B[adapter], "_hf_hook") and isinstance(self.lora_B[adapter]._hf_hook, AlignDevicesHook):
-            self.lora_B[adapter]._hf_hook.post_forward(self.lora_B[adapter], torch.tensor([]))
 
         return output_tensor
 

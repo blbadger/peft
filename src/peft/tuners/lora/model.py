@@ -23,6 +23,7 @@ from itertools import chain
 from typing import List, Optional
 
 import torch
+from accelerate.hooks import AlignDevicesHook
 from tqdm import tqdm
 from transformers.pytorch_utils import Conv1D
 
@@ -40,8 +41,6 @@ from peft.utils import (
 from .config import LoraConfig
 from .gptq import QuantLinear
 from .layer import Conv2d, Embedding, Linear, LoraLayer
-
-from accelerate.hooks import AlignDevicesHook
 
 
 if is_bnb_available():
