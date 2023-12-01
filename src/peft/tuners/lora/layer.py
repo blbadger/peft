@@ -197,14 +197,16 @@ def onload_delta_wrapper(func):
         if hasattr(self.lora_B[adapter], "_hf_hook") and isinstance(self.lora_B[adapter]._hf_hook, AlignDevicesHook):
             self.lora_B[adapter]._hf_hook.pre_forward(self.lora_B[adapter])
 
-        func(self, adapter)
+        output = func(self, adapter)
+        print ('function output: ', output)
 
         if hasattr(self.lora_A[adapter], "_hf_hook") and isinstance(self.lora_A[adapter]._hf_hook, AlignDevicesHook):
             self.lora_A[adapter]._hf_hook.post_forward(self.lora_A[adapter], torch.tensor([]))
         if hasattr(self.lora_B[adapter], "_hf_hook") and isinstance(self.lora_B[adapter]._hf_hook, AlignDevicesHook):
             self.lora_B[adapter]._hf_hook.post_forward(self.lora_B[adapter], torch.tensor([]))
+        return output
 
-    return wrapper 
+    return wrapper
 
 
 # Below code is based on https://github.com/microsoft/LoRA/blob/main/loralib/layers.py
