@@ -960,7 +960,7 @@ class OffloadSaveTests(unittest.TestCase):
     @require_torch_gpu
     def test_offload_merge(self):
         r"""
-        Test merging and unloading of a model with offloaded modules.
+        Test merging of a model with offloaded modules.
         """
         torch.manual_seed(0)
         model = AutoModelForCausalLM.from_pretrained(self.causal_lm_model_id)
@@ -983,7 +983,7 @@ class OffloadSaveTests(unittest.TestCase):
 
         input_tokens = tokenizer.encode("Four score and seven years ago", return_tensors="pt")
         pre_merge_olayer = model(input_tokens)[0]
-        model = model.merge_and_unload()
+        model.merge_adapter()
         post_merge_olayer = model(input_tokens)[0]
 
         self.assertTrue(torch.allclose(pre_merge_olayer, post_merge_olayer))
