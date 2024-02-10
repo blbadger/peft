@@ -339,7 +339,6 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
             raise ValueError(f"The input config must be a PeftConfig, got {config.__class__}")
 
         weight_map = dict(named_module_tensors(model, recurse=True))
-
         disk_modules = []
         index = None
         for name, module in model.named_modules():
@@ -364,9 +363,11 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                 if p in disk_modules
             }
             kwargs["offload_index"] = offload_index
+
         if (getattr(model, "hf_device_map", None) is not None) and len(
             set(model.hf_device_map.values()).intersection({"cpu", "disk"})
         ) > 0:
+            kwargs['device_map'] = model.hf_device_map
             remove_hook_from_submodules(model)
 
         if config.is_prompt_learning and is_trainable:
@@ -729,6 +730,7 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
             and len(self.peft_config) == 1
         ):
             device_map = kwargs.get("device_map", "auto")
+            print (device_map)
             max_memory = kwargs.get("max_memory", None)
             offload_dir = kwargs.get("offload_folder", None)
             offload_index = kwargs.get("offload_index", None)
@@ -755,15 +757,17 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                 )
 
             prefix = "base_model.model."
-            # rename offload index weight and model names
+            # rename offload index weights
             adapter_names = list(self.peft_config.keys())
             for adapter_name in adapter_names:
                 target_modules = self.peft_config[adapter_name].target_modules
+                files = set()
                 if offload_index:
+                    # identify disk-offloaded modules and their offload filenames
                     keys = list(offload_index.keys())
                     block_id = keys[0].split(".")[0] + "."  # for writing safetensors key
-
                     for key in keys:
+                        files.add(offload_index[key]['safetensors_file'])
                         if any(module in key for module in target_modules):
                             suffix_pos = key.rfind(".")
                             new_key = prefix + key[:suffix_pos] + ".base_layer" + key[suffix_pos:]
@@ -773,52 +777,41 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
                         offload_index[new_key] = offload_index[key]
                         del offload_index[key]
 
-                    # rename safetensors for dispatch
-                    file_seen = set()
-                    for new_key in list(offload_index.keys()):
-                        fname = offload_index[new_key]["safetensors_file"]
+                    for filename in files:
+                        safe_dict = {}
+                        with safe_open(filename, framework="pt") as file:
+                            for safe_key in file.keys():
+                                safe_tensor = file.get_tensor(safe_key)
+                                metadata = file.metadata()
+                                suffix_pos = safe_key.rfind(".")
+                                extended_prefix = prefix + block_id + safe_key[:suffix_pos]
+                                final_key = extended_prefix + ".base_layer" + safe_key[suffix_pos:]
+                                lora_dict = {
+                                    key: val for key, val in adapters_weights.items() if extended_prefix in key
+                                }
+
+                                # add LoRA keys and values to disk offload
+                                for lora_key, lora_val in lora_dict.items():
+                                    divide = lora_key.rfind(".")
+                                    new_key = lora_key[:divide] + f".{adapter_name}" + lora_key[divide:]
+                                    safe_dict[new_key] = lora_val
+                                safe_dict[final_key] = safe_tensor
 
                         # make a new file name
-                        new_fname_list = list(fname.split("/"))
+                        new_fname_list = list(filename.split("/"))
                         for i, name in enumerate(new_fname_list):
                             if "--" in name:
                                 new_fname_list[i] += "-peft"
                         new_fname = "/".join(new_fname_list)
 
-                        if fname not in file_seen:
-                            safe_dict = {}
-                            with safe_open(fname, framework="pt") as f:
-                                for safe_key in f.keys():
-                                    safe_tensor = f.get_tensor(safe_key)
-                                    metadata = f.metadata()
-                                    if any(module in safe_key for module in target_modules):
-                                        suffix_pos = safe_key.rfind(".")
-                                        extended_prefix = prefix + block_id + safe_key[:suffix_pos]
-                                        final_key = extended_prefix + ".base_layer" + safe_key[suffix_pos:]
-                                        lora_dict = {
-                                            key: val for key, val in adapters_weights.items() if extended_prefix in key
-                                        }
-
-                                        # add LoRA keys and values to disk offload
-                                        for lora_key, lora_val in lora_dict.items():
-                                            divide = lora_key.rfind(".")
-                                            new_key = lora_key[:divide] + f".{adapter_name}" + lora_key[divide:]
-                                            safe_dict[new_key] = lora_val
-                                    else:
-                                        final_key = prefix + block_id + safe_key
-                                    safe_dict[final_key] = safe_tensor
-                                file_seen.add(fname)
-
-                            # avoid overwriting original safetensors
-                            for key in safe_dict.keys():
-                                offload_index[key] = {"safetensors_file": new_fname, "weight_name": key}
-                            if not os.path.exists(new_fname):
-                                base_name = "/".join(list(new_fname.split("/"))[:-1])
-                                os.makedirs(base_name)
-                            safe_save_file(safe_dict, new_fname, metadata=metadata)
+                        for key in safe_dict.keys():
+                            offload_index[key] = {"safetensors_file": new_fname, "weight_name": key}
+                        if not os.path.exists(new_fname):
+                            base_name = "/".join(list(new_fname.split("/"))[:-1])
+                            os.makedirs(base_name)
+                        safe_save_file(safe_dict, new_fname, metadata=metadata)
 
             dispatch_model_kwargs["offload_index"] = offload_index
-
             dispatch_model(
                 self,
                 device_map=device_map,
