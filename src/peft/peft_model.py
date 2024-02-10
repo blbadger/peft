@@ -730,7 +730,10 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
             and len(self.peft_config) == 1
         ):
             device_map = kwargs.get("device_map", "auto")
+
+            # TODO: check the device map and use the same pre- and post- PEFT conversion
             print (device_map)
+
             max_memory = kwargs.get("max_memory", None)
             offload_dir = kwargs.get("offload_folder", None)
             offload_index = kwargs.get("offload_index", None)
